@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import "./App.css";
 
-const socket = io("http://localhost:4000");
+const socket = io("https://chatapp-backend-1-2yt9.onrender.com");
 
 const validUsers = [
-  { username: "alice", password: "123" },
-  { username: "bob", password: "123" },
-  { username: "charlie", password: "123" }
+  { username: "jash", password: "123", avatar: "https://i.pravatar.cc/150?img=1" },
+  { username: "het", password: "123", avatar: "https://i.pravatar.cc/150?img=2" },
+  { username: "meet", password: "123", avatar: "https://i.pravatar.cc/150?img=3" },
+  { username: "new", password: "123", avatar: "https://i.pravatar.cc/150?img=4" }
 ];
 
 const App = () => {
@@ -20,22 +21,31 @@ const App = () => {
   const [chatLog, setChatLog] = useState([]);
   const [typingUser, setTypingUser] = useState("");
   const [onlineUsers, setOnlineUsers] = useState({});
+  const chatEndRef = useRef(null);
 
-  const availableUsers = validUsers
-    .filter((u) => u.username !== username)
-    .map((u) => u.username);
+  const availableUsers = [...validUsers.map(u => u.username), "Garba Ghela"]
+    .filter(user => user !== username);
 
   useEffect(() => {
+    socket.on("group_message", (data) => {
+      setChatLog(prev => [...prev, {
+        from: data.sender,
+        to: "group",
+        text: data.message,
+        timestamp: data.timestamp
+      }]);
+    });
     socket.on("private_message", (data) => {
-      setChatLog((prev) => [...prev, {
+      setChatLog(prev => [...prev, {
         from: data.sender,
         to: data.receiver,
-        text: data.message
+        text: data.message,
+        timestamp: data.timestamp
       }]);
     });
 
     socket.on("error_message", (data) => {
-      setChatLog((prev) => [...prev, { from: "system", text: data.error }]);
+      setChatLog(prev => [...prev, { from: "system", text: data.error }]);
     });
 
     socket.on("user_online_status", (data) => {
@@ -47,7 +57,10 @@ const App = () => {
         setTypingUser(data.sender);
         setTimeout(() => setTypingUser(""), 1500);
       }
-    });
+
+    }
+  
+  );
 
     return () => {
       socket.off("private_message");
@@ -57,11 +70,13 @@ const App = () => {
     };
   }, [username]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatLog, typingUser]);
+
   const handleLogin = (e) => {
     e.preventDefault();
-    const user = validUsers.find(
-      (u) => u.username === username && u.password === password
-    );
+    const user = validUsers.find(u => u.username === username && u.password === password);
     if (user) {
       setLoggedIn(true);
       setLoginError("");
@@ -71,26 +86,36 @@ const App = () => {
     }
   };
 
+
   const sendPrivateMessage = () => {
     if (!selectedUser || message.trim() === "") return;
+    const timestamp = new Date().toLocaleTimeString();
+    const isGroup = selectedUser === "Garba Ghela";
+  
     socket.emit("private_message", {
       sender: username,
-      receiver: selectedUser,
-      message: message.trim()
+      receiver: isGroup ? "group" : selectedUser,
+      message: message.trim(),
+      timestamp
     });
-    setChatLog((prev) => [...prev, {
+  
+    setChatLog(prev => [...prev, {
       from: username,
-      to: selectedUser,
-      text: message.trim()
+      to: isGroup ? "group" : selectedUser,
+      text: message.trim(),
+      timestamp
     }]);
+  
     setMessage("");
   };
 
   const handleTyping = () => {
-    if (selectedUser) {
+    if (selectedUser && selectedUser !== "Garba Ghela") {
       socket.emit("typing", { sender: username, receiver: selectedUser });
     }
   };
+
+  const backToUsers = () => setSelectedUser("");
 
   if (!loggedIn) {
     return (
@@ -117,63 +142,83 @@ const App = () => {
   }
 
   return (
-    <div className="app-container">
-      <aside className="sidebar">
-        <h3>Users</h3>
-        <ul>
-          {availableUsers.map((user) => (
-            <li
-              key={user}
-              className={selectedUser === user ? "selected" : ""}
-              onClick={() => setSelectedUser(user)}
-            >
-              <span className={`status-dot ${onlineUsers[user] ? "online" : "offline"}`} />
-              {user}
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className={`app-container ${selectedUser ? "chat-open" : ""}`}>
+      {!selectedUser && (
+        <aside className="sidebar">
+          <h3>Users</h3>
+          <ul>
+            {availableUsers.map(user => (
+              <li
+                key={user}
+                className={selectedUser === user ? "selected" : ""}
+                onClick={() => setSelectedUser(user)}
+              >
+                <span className={`status-dot ${onlineUsers[user] ? "online" : "offline"}`} />
+                {user}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
 
-      <main className="chat-area">
-        <header>
-          <h2>{selectedUser ? `Chat with ${selectedUser}` : "Select a user"}</h2>
-        </header>
+      {selectedUser && (
+        <div className="chat-area">
+          <header className="chat-header">
+            <button className="back-button" onClick={backToUsers}>←</button>
+            <h2>
+              {selectedUser}
+              <span className={`status-dot ${onlineUsers[selectedUser] ? "online" : "offline"}`}></span>
+            </h2>
+          </header>
 
-        <div className="chat-box">
-          {chatLog
-            .filter(
-              (msg) =>
+          <div className="chat-box">
+            {chatLog
+              .filter(msg =>
                 (msg.from === username && msg.to === selectedUser) ||
                 (msg.from === selectedUser && msg.to === username) ||
+                (selectedUser === "Garba Ghela" && msg.to === "group") ||
                 msg.from === "system"
-            )
-            .map((msg, idx) => (
-              <div
-                key={idx}
-                className={`chat-message ${
-                  msg.from === username ? "sent" : msg.from === "system" ? "system" : "received"
-                }`}
-              >
-                <p>{msg.text}</p>
-              </div>
-            ))}
-          {typingUser && <p className="typing">{typingUser} is typing...</p>}
-        </div>
+              )
+              .map((msg, idx) => {
+                const senderData = validUsers.find(u => u.username === msg.from);
+                return (
+                  <div
+                    key={idx}
+                    className={`chat-message ${
+                      msg.from === username ? "sent" : msg.from === "system" ? "system" : "received"
+                    }`}
+                  >
+                    {msg.from !== "system" && (
+                      <div className="message-meta">
+                        <img className="avatar" src={senderData?.avatar} alt={msg.from} />
+                        <div className="meta-text">
+                          <span className="sender-name">{msg.from}</span>
+                          <span className="time">{msg.timestamp}</span>
+                        </div>
+                      </div>
+                    )}
+                    <p>{msg.text}</p>
+                  </div>
+                );
+              })}
+            {typingUser && <p className="typing">{typingUser} is typing...</p>}
+            <div ref={chatEndRef} />
+          </div>
 
-        <div className="input-box">
-          <input
-            type="text"
-            placeholder="Type your message..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              handleTyping();
-              if (e.key === "Enter") sendPrivateMessage();
-            }}
-          />
-          <button onClick={sendPrivateMessage}>Send</button>
+          <div className="input-box">
+            <input
+              type="text"
+              placeholder="Type your message..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                handleTyping();
+                if (e.key === "Enter") sendPrivateMessage();
+              }}
+            />
+          </div>
         </div>
-      </main>
+      )}
     </div>
   );
 };
